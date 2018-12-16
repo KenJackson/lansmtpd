@@ -15,7 +15,7 @@ this daemon needs to know the email providers and credentials.
 Mail user agents (MUAs) such as 'thunderbird', 'evolution', 'mailx' or
 'mutt' on machines connected to the LAN may be configured to send all mail
 to port 25 of the server on the LAN running lansmtpd.  Email sent through
-lansmtpd addressed to any valid email address is forwarded to a configured
+lansmtpd addressed to any valid email address is submitted to a configured
 SMTP server using the configured credentials of the provider account.
 
 Windows machines may also be so configured.
@@ -60,10 +60,10 @@ Client.pm file isn't needed.  Otherwise, install it as root:
 Install lansmtpd by executing these commands as root:
 
     install -m755 lansmtpd /usr/local/bin
-    install -m600 lansmtpd.cfg /usr/local/etc
+    install -m600 lansmtpd.conf /usr/local/etc
     echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
 
-Edit and uncomment lines in /usr/local/etc/lansmtpd.cfg appropriately.  The
+Edit and uncomment lines in /usr/local/etc/lansmtpd.conf appropriately.  The
 configuration for each provider should be put in its own section identified
 by the domain name in brackets, e.g. [comcast.net].  The "from" address on
 outgoing email selects the section that's used.  Section [smtp] matches any

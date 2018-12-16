@@ -87,13 +87,13 @@ Install lansmtpd by executing these commands as root:
 .It
 install -m755 lansmtpd /usr/local/bin
 .It
-install -m600 lansmtpd.cfg /usr/local/etc
+install -m600 lansmtpd.conf /usr/local/etc
 .It
 echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
 .El
 .Pp
 Edit and uncomment lines in
-.Pa /usr/local/etc/lansmtpd.cfg
+.Pa /usr/local/etc/lansmtpd.conf
 appropriately.
 
 Configure ssmtp (or sendmail, etc.) on each participating machine on the
