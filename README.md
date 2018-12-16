@@ -24,7 +24,7 @@ Local Mail
 ----------
 
 Email addressed to a local machine is delivered to the designated local
-mailbox.
+mailbox.\
 E.g.: tim@mybox, anybody@localhost, root@mybox.localdomain, tim, root.
 
 This allows cron or other software running on any PC on the home network

@@ -1,0 +1,611 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use English '-no-match-vars';
+use File::Basename;
+use POSIX qw(strftime);
+use Net::IP;
+use Net::SMTP;
+use Net::SMTP::Server;
+use Net::SMTP::Server::Client;
+use Sys::Hostname;
+
+# Variables
+
+my $version  = "0.6";
+my $debug    = 0;
+my $verbose  = 0;
+my $failures = 0;
+my $action   = 'start';
+my $lan;                                # Net::IP of valid client addresses
+my $loopback = new Net::IP("127/8");
+my $mda;
+my %cfg;
+
+my $name = basename($0);
+my $cfgfilename  = "/usr/local/etc/${name}.conf";
+my $pidfilename  = "/var/run/${name}.pid";
+my $logfilename  = "/var/log/${name}.log";
+
+# Process command-line arguments
+
+for (my $i=0;  $i<=$#ARGV;  $i++)
+{
+    my $arg = $ARGV[$i];
+    $arg =~ m/^-d$|^-?-debug$/   &&  do { $debug    = 1;        next };
+    $arg =~ m/^-h$|^-?-help$/    &&  do { Usage();           exit(0) };
+    $arg =~ m/^-v$|^-?-verbose$/ &&  do { $verbose  = 1;        next };
+    $arg =~ m/^dump$/            &&  do { $action   = 'dump';   next };
+    $arg =~ m/^start$/           &&  do { $action   = 'start';  next };
+    $arg =~ m/^status$/          &&  do { $action   = 'status'; next };
+    $arg =~ m/^stop$|^kill$/     &&  do { $action   = 'stop';   next };
+    $arg =~ m/^-nc$/             &&  do { $cfgfilename = undef; next };
+    $arg =~ m/\.conf$/           &&  do { $cfgfilename = $arg;  next };
+    $arg =~ m/^-V$|^-?-version$/ &&  do { print "$name v$version\n"; exit(0) };
+    die "Unknown argument '$arg'";
+}
+
+my $pid = ReadPidFile($pidfilename);
+
+# Show status and exit if requested on the command line
+
+if ($action eq "status")
+{
+    printf "Daemon $name is %srunning%s\n", $pid ? "" : "not ",
+                                            $pid ? ", PID $pid" : "";
+    exit 0;
+}
+
+# Stop the existing daemon if requested on the command line
+
+if ($action eq "stop")
+{
+    if (!$pid)
+    {
+        print "Daemon $name is not running\n";
+        exit 0;
+    }
+    die "Daemon $name can only be stopped by root\n"  if ($UID);
+
+    my $verb = "Terminated";
+    kill 'TERM', $pid;
+    sleep 1;
+    if (-f $pidfilename)
+    {
+        kill 'TERM', $pid;
+        sleep 1;
+        if (-f $pidfilename)
+        {
+            if (kill 'KILL', $pid)
+            {
+                $verb = "Killed";
+                unlink $pidfilename;
+
+                # If we killed it, it didn't run Terminate() so log it here
+                Log("Killed the daemon, PID $pid");
+            }
+            else
+            {
+                $verb = "$! trying to stop";
+            }
+        }
+    }
+    print "$verb daemon $name, PID $pid\n";
+    exit 0;
+}
+
+die "Daemon $name is already running, PID $pid\n"
+    if ($pid  &&  $action ne "dump");
+
+# Read the configuration file
+
+%cfg = ReadConfigFile($cfgfilename)  if ($cfgfilename);
+my $ip = $cfg{local}{lan}  if $cfg{local}{lan};
+if ($ip)
+{
+    $lan = new Net::IP($ip)  or
+        die "Configured LAN address range is invalid, \"$ip\"\n";
+}
+elsif ($verbose)
+{
+    warn "No LAN was found in the \"[local]\" section.\n";
+    warn "Mail will be accepted from any source IP.\n";
+}
+
+# Dump the configuration file if requested
+
+if ($action ne "start")                 # "dump"
+{
+  # use Data::Dumper;
+  # print Dumper([%cfg]);
+    exit 0;
+}
+
+# Make a list of host equivalents for domain comparison
+
+my @localhost = ("localhost", "localhost.localdomain");
+if ($cfg{local}{hostalias})
+{
+    @localhost = (split(/[\s,]+/, lc($cfg{local}{hostalias})), @localhost);
+}
+if (my $host = hostname)
+{
+    $host = lc($host);
+    @localhost = ("$host.local", @localhost)  if ($host !~ m/\./);
+    @localhost = ($host, @localhost);
+}
+
+# Select which mail delivery agent to use
+
+$mda = $cfg{local}{mda}  if $cfg{local}{mda};
+for my $exe ("/usr/bin/maildrop", "/usr/bin/procmail", "/usr/bin/dovecot-lda")
+{
+    last if $mda;
+    next if (! -x $exe);
+    $mda = $exe;
+}
+Log("Using \"$mda\" to deliver local email")  if $mda;
+print "Using \"$mda\" to deliver local email\n"  if ($mda && $verbose);
+warn "Can't find any MDA to deliver local email\n"  if (! $mda && $verbose);
+
+# Start the daemon--the parent exits and the child continues on
+
+die "Daemon $name must be started by root\n"  if ($UID);
+$pid = Daemonize();
+
+# Implement an MTA, listen on port 25 for incoming email
+
+my $server = new Net::SMTP::Server('0.0.0.0', 25)  or
+                    Log("Unable to open SMTP server socket: $!", "terminate");
+Log("Started daemon, PID $pid");
+
+# Loop receiving outgoing mail ($conn is IO::Socket::IP)
+
+while (my $conn = $server->accept())
+{
+    # Verify the peer is on our local LAN
+
+    my $peerhostip = $conn->peerhost();
+    if ($lan)
+    {
+        my $peerhost = new Net::IP($peerhostip);
+        if (!$peerhost)
+        {
+            Log("Ignoring invalid peer connection, \"$peerhostip\"");
+            $conn = undef;
+            next;
+        }
+        if ($lan->overlaps($peerhost) == $IP_NO_OVERLAP  and
+            $loopback->overlaps($peerhost) == $IP_NO_OVERLAP)
+        {
+            Log("Ignoring external peer connection, $peerhostip");
+            $conn->DESTROY();
+            $conn = undef;
+            next;
+        }
+    }
+
+    # Handle the client's connection and spawn a new parser
+
+    my $client = new Net::SMTP::Server::Client($conn);
+    if (!$client)
+    {
+        Log("Unable to handle client connection: $!");
+        Log("Too many failures--terminating","terminate") if ($failures++ >10);
+        next;                           # Go wait for the next message
+    }
+    $failures = 0;
+    fork  and  next;                    # The parent loops back to 'while'
+
+
+    # This is the child process--it must exit when done (don't Terminate()).
+    # Process the client.  This command will block until the connecting
+    # client completes the SMTP transaction.
+
+    if (!$client->process())
+    {
+        Log("Rejecting incomplete email message from $peerhostip: $!", "exit");
+    }
+    $SIG{'PIPE'} = sub { Log("Pipe broke mailing from " . $client->{FROM} .
+                             " to " . ${$client->{TO}}[0], "exit"); };
+
+    # Separate local and non-local recipients
+    # TODO: Support local addresses in "Bcc:" and "Cc:" <<<<<<<<<<<<<<<<<<<<
+
+    my @tosmtp;
+    my @tolocal = ();
+    foreach my $to (@{$client->{TO}})
+    {
+        $to =~ m/<\(.*\)>/  and  $to = $1;  # Remove '<' and '>'
+        my $use_smtp = 0;                   # Initially assume local delivery
+        if ($to =~ m/@([^>"\s]+)/)
+        {
+            my $domain = lc($1);
+            $use_smtp = 1;                  # There's a domain, so send instead
+            foreach my $lh (@localhost)
+            {
+                $lh eq $domain  or  next;
+                $use_smtp = 0;              # Domain is local, so deliver local
+                last;
+            }
+        }
+        $use_smtp  and  push(@tosmtp, $to)  or  push(@tolocal, $to);
+    }
+
+    # Deliver the message to each local address, or to only one if configured
+
+    if (@tolocal > 0)
+    {
+        @tolocal = ($cfg{local}{username})  if $cfg{local}{username};
+        foreach my $to (@tolocal)
+        {
+            Deliver($to, $client->{MSG}, $peerhostip);
+        }
+    }
+
+    # Send the message to any non-local email addresses
+
+    Mail(\@tosmtp, $client->{FROM}, $client->{MSG})  if (@tosmtp > 0);
+
+    # Exit this child process
+
+    exit(0);
+}
+
+
+#---------------------------------------------------------------------------
+sub Usage
+{
+    print "Usage:\n\n    $name [start|stop|status]\n\n";
+}
+
+
+#---------------------------------------------------------------------------
+# Open the logfile, write a line to it and close it.
+#
+# Parameters:
+#     string to be written
+#     empty, "terminate", "exit" or a message to die by
+# Returns:
+#     TRUE if it returns at all
+# Global:
+#     $logfilename
+#
+sub Log
+{
+    my ($arg, $second) = @_;
+    if ($logfilename  and  open LF, ">>", $logfilename)
+    {
+        print LF strftime("%D %R ",localtime), ($arg ? "$arg\n" : "NO ARG!\n");
+        close LF;
+    }
+    if ($second)
+    {
+        Terminate()  if ($second eq 'terminate');
+        exit(0)      if ($second eq 'exit');
+        die $second;
+    }
+    return 1;
+}
+
+
+#---------------------------------------------------------------------------
+# Read a configuration file and return a hash of data.  Sections appear
+# bracketed on a line by themselves, e.g. "[Local]", defaults to "_".
+#
+# Variables are in the form "NAME = VALUE".  Spaces are optional.  There
+# is no escape character.
+#
+# Section names and variable names are stored in lower case.
+#
+# Parameter:
+#     filename
+# Returns:
+#     hash of configuration data
+#
+sub ReadConfigFile
+{
+    my $file = shift;
+    my %config;
+    my $section = '_';
+    my $n = 0;
+
+    -f $file  or  die "Can't find configuration $file";
+    -r $file  or  die "Can't read configuration $file";
+
+    open my $fh, '<', $file or do { die "Opening config file \"$file\": $!" };
+
+    while (defined(my $line = <$fh>))
+    {
+        $n++;
+        $line =~ m/^\s*#/  and next;    # Skip lines that start with '#'
+        $line =~ m/^\s*$/  and next;    # Skip empty lines
+        $line =~ m/^\s*\[\s*([^]]*[^]\s])\s*\]/  and
+            do { $1 =~ s/\s+$//;  $section = $1 ? lc($1) : '_';  next };
+
+        $line =~ m/=/  or  die "Invalid config line $n, \"$line\"";
+
+        # Parse VARIABLE = VALUE, remove leading and trailing whitespace
+
+        $line =~ m/^\s*([a-zA-Z0-9_-]+)\s*=\s*(.*)$/;
+        $2 =~ s/\s+$//;
+        $config{$section}{lc($1)} = $2;
+    }
+    close $fh;
+    return %config;
+}
+
+
+#---------------------------------------------------------------------------
+# Open and read the PID number out of the specified file, if it exists.
+# Try to delete the file if it contains anything other than a number or if
+# the process isn't running.
+#
+# Parameter:
+#     filename
+# Returns:
+#     PID or undef
+#
+sub ReadPidFile
+{
+    my $file = shift;
+    open PF, "<", $file  or  return undef;
+    my $N = <PF>;
+    close PF;
+    chomp $N  if $N;
+
+    if ($N)                             # If not undef, not empty and not 0
+    {
+        my $problem;
+        if ($N =~ m/\D/)                # If $N contains any non-digits
+        {
+            $N = undef;
+            $problem = "corrupted";
+        }
+        if ($N  and  -d "/proc"  and  ! -d "/proc/$N")    # If not active
+        {
+            $N = undef;
+            $problem = "stale";
+        }
+        if ($problem)
+        {
+            unlink $file  and print "Removed $problem PID file\n"
+                          or  print "Failed to remove $problem PID file: $!\n";
+        }
+    }
+    return $N;
+}
+
+
+#---------------------------------------------------------------------------
+# Fork the current process and exit.  The child continues executing as a
+# daemon and returns.
+#
+# This site describes what's necessary to become a daemon:
+# http://www.faqs.org/faqs/unix-faq/programmer/faq/, section 1.7
+#
+# Some daemon code was inspired by
+# https://github.com/mschilli/app-daemon/blob/master/Daemon.pm
+#
+# Parameters:
+#     UID, GID      IDs to switch to, optional
+# Returns:
+#     PID of child (parent exits)
+# Global:
+#     $pidfilename  PID file to create
+#     $logfilename
+#     $debug        boolean
+#
+sub Daemonize
+{
+    my ($uid, $gid) = @_;
+
+    chdir("/");
+    umask(0);
+
+    # Make sure the child isn't killed on close of terminal session
+
+    $SIG{'HUP'} = 'IGNORE';
+
+    # Fork
+
+    my $child = fork();
+    die "Failed to fork"  if (! defined $child);
+    exit(0)  if $child;                 # Parent exits
+
+    # Become the session leader of a new session.  Become the
+    # group leader of a new process group.
+
+    POSIX::setsid() == -1  and  die "Can't start a new session: $!\n";
+
+    # Write our process ID (PID) to a file
+
+    open PF, ">", $pidfilename  or  die "$! opening $pidfilename\n";
+    print PF $PID;
+    close PF;
+    chmod 0444, $pidfilename;
+
+    # Setup signal handlers
+
+    $SIG{'INT'}  = \&Terminate;
+    $SIG{'QUIT'} = \&Terminate;
+    $SIG{'ABRT'} = \&Terminate;
+    $SIG{'KILL'} = \&Terminate;         # Probably won't work for KILL
+    $SIG{'SEGV'} = \&Terminate;
+    $SIG{'TERM'} = \&Terminate;
+    $SIG{'CHLD'} = 'IGNORE';            # This prevents zombie processes
+
+    # Switch group and user from root and chown pidfile and logfile
+
+    if ($uid  and  $gid)
+    {
+        die "Only root can change user and group IDs\n"  if ($UID != 0);
+        chown $uid, $gid, $pidfilename, $logfilename;
+        POSIX::setgid($gid);            # Must change GID first, as root
+        POSIX::setuid($uid);
+    }
+
+    # Redirect std file descriptors to /dev/null or close them
+
+    if (-e "/dev/null"  and  !$debug)
+    {
+        open STDIN,  '< /dev/null';
+        open STDOUT, '> /dev/null';
+        open STDERR, '> /dev/null';
+    }
+    elsif (!$debug)
+    {
+        close(STDIN);
+        close(STDOUT);
+        close(STDERR);
+    }
+
+    return $PID;
+}
+
+
+#---------------------------------------------------------------------------
+# This termination function is a signal handler.  It may also be called
+# directly with no arguments, but ONLY from the main daemon process.
+#
+# Parameters:
+#     signal name or undef
+# Returns:
+#     doesn't return
+# Global:
+#     $pidfilename
+#     $pid
+#
+sub Terminate
+{
+    my $sig = shift;
+    if (-f $pidfilename)
+    {
+        unlink $pidfilename  or  Log("Can't delete $pidfilename: $!");
+    }
+    if ($pid)
+    {
+        Log($sig ? "Terminating PID $pid on SIG$sig" : "Terminating PID $pid");
+    }
+    exit 0;
+}
+
+
+#---------------------------------------------------------------------------
+# Deliver email to a local user with 'maildrop' or 'procmail'.
+#
+# Parameters:
+#     local recipient username
+#     message to deliver
+# Returns:
+#     nothing
+# Global:
+#     $mda      - Mail Delivery Agent (maildrop or procmail)
+#
+sub Deliver
+{
+    my $user = shift;
+    my $message = shift;
+    my $peerip = shift;
+
+    if (! $mda)
+    {
+        Log("Can't deliver a message to $user; there's no MDA");
+    }
+    elsif (open MAIL, "| $mda -d $user")    # Fork
+    {
+        print MAIL $message  and
+            Log("delivered a " . length($message) .
+                "-byte message from $peerip to $user")  or
+            Log("FAILED to deliver a message from $peerip to $user: $!");
+
+        # Closing the file causes parent to wait for the child process
+        close(MAIL);
+    }
+    else
+    {
+        Log("FAILED to open \"$mda\" for user $user: $!");
+    }
+}
+
+
+#---------------------------------------------------------------------------
+# Forward email to the configured SMTP server.
+#
+# Parameters:
+#     list of recipient email addresses
+#     sender's email address
+#     message to deliver
+# Returns:
+#     nothing
+# Global:
+#     %cfg{smtp}
+#
+sub Mail
+{
+    my $recipients = shift;             # Ref of list of recipient addresses
+    my $from = shift;
+    my $message = shift;
+    my $domain = lc($from);
+    $domain =~ s/.*@//;
+    my ($smtp, $server, $port, $user, $password);
+
+    if ($cfg{$domain})                  # Section [example.com] in config file
+    {
+        $server = $cfg{$domain}{host};
+        $port = $cfg{$domain}{port}  ||  465;
+        $user = $cfg{$domain}{username};
+        $password = $cfg{$domain}{password};
+    }
+    if (! $server)                      # Default to [smtp] section
+    {
+        $server = $cfg{smtp}{host};
+        $port = $cfg{smtp}{port}  ||  465;
+        $user = $cfg{smtp}{username};
+        $password = $cfg{smtp}{password};
+    }
+
+    if (! $server)
+    {
+        Log("SMTP server missing in config file, can't deliver to " .
+            "@{$recipients}");
+    }
+    else
+    {
+        if ($verbose  &&  $debug)
+        {
+            printf("Opening SMTP: server='%s', port='%s', user='%s', "
+                 . "to=@{$recipients}\n", $server, $port, $user);
+        }
+        $smtp = Net::SMTP->new(Host => $server,
+                               Port => $port,
+                               SSL => 1,
+                               Debug => $debug,
+                               Timeout => 30);
+        Log("Can't connect to \"$server:$port\": $!")  if !$smtp;
+    }
+
+    if ($smtp  and  ! $smtp->auth($user, $password))
+    {
+        Log("Can't authenticate user \"$user\" at \"$server\": $!");
+        $smtp = undef;
+    }
+
+    # Send the message to the SMTP server
+
+    if ($smtp)
+    {
+        my $first = "";
+        $smtp->mail($from);
+        for my $to (@{$recipients})
+        {
+            $smtp->recipient($to);
+            $first = $to  if !$first;
+        }
+        my $m = "from $from to $first";
+        $smtp->data($message);
+        $smtp->dataend()  and  Log("Sent $m")  or Log("Failed to send $m: $!");
+        $smtp->quit();
+    }
+}

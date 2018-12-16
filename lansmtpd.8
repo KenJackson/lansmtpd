@@ -1,0 +1,149 @@
+.\" See groff_mdoc(7) for the format
+.Dd December 15, 2018
+.Dt LANSMTPD 8 CON
+.Os lansmtpd
+.Sh NAME
+.Nm lansmtpd
+.Nd SMTP Daemon for a LAN
+.Sh SYNOPSIS
+.Nm lansmtpd
+.Op start|stop|status|-V
+.Op --verbose|-v
+.Sh DESCRIPTION
+.Cm lansmtpd
+is an SMTP daemon that delivers email to local users
+and passes outgoing email to a real SMTP server.  It can
+be run on a home Linux server to serve all computers on the LAN 
+as a mail transfer agent (MTA).
+.Ss "Central Configuration"
+Lansmtpd enables the consolidation of email configuration infomation.  Only
+this daemon needs to know the email provider and credentials.
+.Pp
+Mail user agents (MUAs) such as 
+.Em thunderbird ,
+.Em evolution ,
+.Em mailx
+or
+.Em mutt
+on machines connected to the LAN may be configured to send all mail to
+port 25 of the lansmtpd server on the LAN.  Email sent through lansmtpd
+addressed to any valid email address is forwarded to a configured SMTP
+server using the configured credentials of the provider account.
+.Pp
+Windows machines may also be so configured.
+
+.Ss "Local Mail"
+Email addressed to a local machine is delivered to the designated local
+mailbox.
+E.g.: tim, tim@mybox, bill@localhost, root@mybox.localdomain, root.
+.Pp
+This allows cron or other software running on any PC on the home network
+to send email such that it is received along with other incoming mail,
+but without ever leaving the LAN or even requiring internet connectivity.
+.Pp
+Although, note that the cron daemon requires /usr/sbin/sendmail to deliver
+email.  Therefore every computer that uses cron must have the 'sendmail'
+package or a simpler substitute such as 'ssmtp' (recommended) installed
+and configured to send email to the lansmtpd server.
+.Pp
+
+Multiple users on PCs directly connected to the LAN may also send email
+to each other this way if the recipients have accounts on the lansmtpd
+server.
+
+.Ss Installation
+Verify these perl packages and software packages are installed.  Install
+any missing packages:
+.Pp
+.Bl -item -offset indent -compact
+.It
+Net::IP
+.It
+Net::SMTP::SSL
+.It
+Net::SMTP::Server::Client
+.It
+ssmtp (or sendmail, etc.)
+.It
+maildrop (or possibly another mail delivery agent)
+.El
+.Pp
+If the
+.Pa Net::SMTP::Server::Client
+perl package is available, the provided
+.Pa Client.pm
+file isn't needed.  Otherwise, install it as root:
+.Pp
+.Bl -item -offset indent -compact
+.It
+mkdir -p /usr/local/share/perl5/Net/SMTP/Server
+.It
+install -m444 Client.pm /usr/local/share/perl5/Net/SMTP/Server/
+.El
+.Pp
+Install lansmtpd by executing these commands as root:
+.Pp
+.Bl -item -offset indent -compact
+.It
+install -m755 lansmtpd /usr/local/bin
+.It
+install -m600 lansmtpd.cfg /usr/local/etc
+.It
+echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
+.El
+.Pp
+Edit and uncomment lines in
+.Pa /usr/local/etc/lansmtpd.cfg
+appropriately.
+
+Configure ssmtp (or sendmail, etc.) on each participating machine on the
+network to deliver email to the machine running lansmtpd.  You may only
+need to set the
+.Va mailhub
+variable to the hostname of the server.
+
+.Ss Startup
+The line added to
+.Pa /etc/rc.d/rc.local
+will start lansmtpd when the server is booted.  It may be started manually
+by executing this command as root:
+.Bd -literal -offset indent
+lansmtpd start
+.Ed
+.Ss Receiving Email
+This daemon has nothing to do with receiving email, but it has limited
+value without a complementary POP or IMAP configuration.  A suggested
+setup is to run an IMAP daemon on the same server that runs lansmtpd, and
+use
+.Em fetchmail
+to pull email received at email providers.
+
+The
+.Em uw-imap
+and
+.Em fetchmail
+packages are available in many GNU/Linux repositories.
+
+There are advantages of this setup.
+.Bl -bullet -compact
+.It
+Email from multiple providers can be consolidated in one local inbox.
+.It
+Inbox limits imposed by email providers are irrelevant as email is stored
+locally.
+.It
+Email sent locally, such as by cron on any machine on the LAN, can be
+delieverd to the same inbox with external email, even when the internet
+connection is down.
+.It
+Popular email clients such as Thunderbird running on multiple machines
+on the LAN can present the same inbox simultaneously with no conflict.
+.El
+.Sh SEE ALSO
+.Xr Net::SMTP::Server 3 ,
+.Xr Net::SMTP::Server::Client 3 ,
+.Em http://www.washington.edu/imap/ ,
+.Em http://www.fetchmail.info/
+.Sh AUTHORS
+.Pp
+.An "Ken Jackson"

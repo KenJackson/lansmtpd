@@ -1,0 +1,91 @@
+.\" See man 7 groff_mdoc
+.\"
+.\" Examples of man 5:
+.\"   sudo.conf
+.\"   yum.conf mke2fs.conf odbcinst.ini libuser.conf udisks2.conf vbox.conf
+.\"
+.Dd December 15, 2018
+.Dt LANSMTPD.CONF 5 CON
+.Os lansmtpd
+.Sh NAME
+.Nm lansmtpd.conf
+.Nd Configuration file for lansmtpd
+.Sh SYNOPSIS
+.Nm /usr/local/etc/lansmtpd.conf
+.Sh DESCRIPTION
+The file has an ini\-style syntax and consists of sections and parameters\&. A section begins with the name of the section in square brackets and continues until the next section begins or the file ends\&. An example of section with one parameter:
+.Sp
+.Bd -literal -offset indent
+[section]
+variable = value
+.Ed
+.Pp
+Variable names are not case specific, but values are.
+.Pp
+The only sections are supported are [local], [smtp] and sections for specific
+domains, like [example.com].  Other sections and lines before the first
+section are ignored.
+.Pp
+Comments start with a hash sign (\(lq#\(rq) and end at the end of the line\&. Comments are only supported on their own lines\&.
+.Pp
+The file must be a regular file, owned by root and only readable or
+writeable by root.
+.Ss "THE [LOCAL] SECTION"
+Variables which may be used in this section:
+.Bl -tag -width 10n
+.It Sy username
+The username to deliver all local email to. Local email is any address in the "To" address list containing a localhost domain, the hostname as a domain, or no domain\&. If multiple local addresses are specified, only one copy will be delivered to this user\&.
+.sp
+If username is not specified here, the message will be delivered to the local username(s) from each "To" address (if any) in additon to SMTP delivery for normal addresses\&.
+.It Sy lan
+The network IP address in CIDR notation\&. Frequently home networks use 192\&.168\&.1\&.0/24 so this would be the value for LAN\&.
+.sp
+For security, this parameter should be specified\&. If it\&'s not, mail will be accepted from any IP address\&.
+.It Sy hostalias
+Optional alternate hostname or FQDN or comma\-separated list that should cause delivery to this host\&. For example if 
+.Cm hostname
+returns "office", you may want to add "office\&.local" (no quotes)\&. Or if
+.Cm hostname
+returns "office\&.local", you may want to add "office"\&.
+.It Sy mda
+The Mail Delivery Agent to use for local delivery\&. By default, the first one found of the following is used: /usr/bin/maildrop, /usr/bin/procmail or /usr/bin/dovecot\-lda\&.
+.El
+.Ss "THE [SMTP] AND [DOMAIN.COM] SECTIONS"
+If the domain in the "from" address in the outgoing email matches a section,
+it is used.  Otherwise the SMTP section is used.
+Variables which may be used in these sections:
+.Bl -tag -width 10n
+.It Sy username
+The username used to authenticate the SMTP connection\&. Usually this is for the internet service provider\&.
+.It Sy password
+The password used to authenticate the SMTP connection\&.
+.It Sy host
+The FQDN of the MTA to send email to for regular email addresses\&. Usually this is something like smtp\&.example\&.com or mail\&.example\&.com\&.
+.It Sy port
+The port of the MTA to send email to for regular email addresses\&. Default is 465 if not specified\&.
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+# /usr/local/etc/lansmtpd.conf
+# Example configuration
+
+[local]
+username = jackson
+lan      = 192.168.1.0/24
+mda      = /usr/bin/maildrop
+
+[verizon.net]
+username = your@verizon.net
+password = your-verizon-password
+host     = smtp.aol.com
+port     = 465
+
+[smtp]
+username = samantha
+password = XQz$BWu57
+host     = smtp.example.com
+port     = 465
+.Ed
+.Sh AUTHORS
+.Pp
+.An "Ken Jackson"
