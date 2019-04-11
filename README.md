@@ -63,6 +63,16 @@ Install lansmtpd by executing these commands as root:
     install -m600 lansmtpd.conf /usr/local/etc
     echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
 
+Install the man pages by executing these commands as root:
+
+    mkdir -p /usr/local/share/man/man5 /usr/local/share/man/man8
+    install -m444 lansmtpd.8 /usr/local/share/man/man8
+    install -m444 lansmtpd.conf.5 /usr/local/share/man/man5
+
+Optionally install the logrotate file as root:
+
+    install -m644 logrotate /etc/logrotate.d/lansmtpd
+
 Edit and uncomment lines in /usr/local/etc/lansmtpd.conf appropriately.  The
 configuration for each provider should be put in its own section identified
 by the domain name in brackets, e.g. [comcast.net].  The "from" address on

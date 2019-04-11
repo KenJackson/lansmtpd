@@ -1,5 +1,5 @@
 .\" See groff_mdoc(7) for the format
-.Dd December 15, 2018
+.Dd April 4, 2019
 .Dt LANSMTPD 8 CON
 .Os lansmtpd
 .Sh NAME
@@ -9,6 +9,7 @@
 .Nm lansmtpd
 .Op start|stop|status|-V
 .Op --verbose|-v
+.Op FILE.conf
 .Sh DESCRIPTION
 .Cm lansmtpd
 is an SMTP daemon that delivers email to local users
@@ -17,7 +18,7 @@ be run on a home Linux server to serve all computers on the LAN
 as a mail transfer agent (MTA).
 .Ss "Central Configuration"
 Lansmtpd enables the consolidation of email configuration infomation.  Only
-this daemon needs to know the email provider and credentials.
+this daemon needs to know the email provider(s) and credentials.
 .Pp
 Mail user agents (MUAs) such as 
 .Em thunderbird ,
@@ -27,7 +28,7 @@ or
 .Em mutt
 on machines connected to the LAN may be configured to send all mail to
 port 25 of the lansmtpd server on the LAN.  Email sent through lansmtpd
-addressed to any valid email address is forwarded to a configured SMTP
+addressed to any valid email address is submitted to a configured SMTP
 server using the configured credentials of the provider account.
 .Pp
 Windows machines may also be so configured.
@@ -137,7 +138,8 @@ delieverd to the same inbox with external email, even when the internet
 connection is down.
 .It
 Popular email clients such as Thunderbird running on multiple machines
-on the LAN can present the same inbox simultaneously with no conflict.
+on the LAN can present and operate on the same inbox simultaneously with
+no conflict.
 .El
 .Sh SEE ALSO
 .Xr Net::SMTP::Server 3 ,

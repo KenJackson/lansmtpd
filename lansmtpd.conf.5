@@ -4,7 +4,7 @@
 .\"   sudo.conf
 .\"   yum.conf mke2fs.conf odbcinst.ini libuser.conf udisks2.conf vbox.conf
 .\"
-.Dd December 15, 2018
+.Dd April 5, 2019
 .Dt LANSMTPD.CONF 5 CON
 .Os lansmtpd
 .Sh NAME
@@ -49,6 +49,8 @@ returns "office", you may want to add "office\&.local" (no quotes)\&. Or if
 returns "office\&.local", you may want to add "office"\&.
 .It Sy mda
 The Mail Delivery Agent to use for local delivery\&. By default, the first one found of the following is used: /usr/bin/maildrop, /usr/bin/procmail or /usr/bin/dovecot\-lda\&.
+.It Sy verbose
+Whether to log each message sent\&. Values may be: true, false, yes, no, 1 or 0\&. Default is false\&.
 .El
 .Ss "THE [SMTP] AND [DOMAIN.COM] SECTIONS"
 If the domain in the "from" address in the outgoing email matches a section,
@@ -63,6 +65,8 @@ The password used to authenticate the SMTP connection\&.
 The FQDN of the MTA to send email to for regular email addresses\&. Usually this is something like smtp\&.example\&.com or mail\&.example\&.com\&.
 .It Sy port
 The port of the MTA to send email to for regular email addresses\&. Default is 465 if not specified\&.
+.It Sy verbose
+Whether to log information per message sent\&. Values may be: true, false, yes, no, 1 or 0\&. Default is false\&.
 .El
 .Sh EXAMPLES
 .Bd -literal -offset indent
@@ -73,6 +77,7 @@ The port of the MTA to send email to for regular email addresses\&. Default is 4
 username = jackson
 lan      = 192.168.1.0/24
 mda      = /usr/bin/maildrop
+verbose  = no
 
 [verizon.net]
 username = your@verizon.net
@@ -85,7 +90,17 @@ username = samantha
 password = XQz$BWu57
 host     = smtp.example.com
 port     = 465
+verbose  = true
+.Ed
+.Sh FILES
+.Pa /usr/local/etc/lansmtpd.conf
+.Bd -filled -offset indent -compact
+Configuration file for lansmtpd\&.  An alternate file with name ending in
+.Qq .conf
+may be specified on
+the command line\&.
 .Ed
 .Sh AUTHORS
 .Pp
+.\" I should add email address: .An "Ken Jackson" Aq me@mydomain.com 
 .An "Ken Jackson"

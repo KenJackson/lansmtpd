@@ -13,7 +13,7 @@ use Sys::Hostname;
 
 # Variables
 
-my $version  = "0.6";
+my $version  = "0.7";
 my $debug    = 0;
 my $verbose  = 0;
 my $failures = 0;
@@ -92,6 +92,13 @@ if ($action eq "stop")
         }
     }
     print "$verb daemon $name, PID $pid\n";
+    exit 0;
+}
+
+if ($action eq "reload")
+{
+    die "$name isn't running, start it"  if (! $pid);
+  # kill("USR1", $pid);                 # Tell the daemon to read config again
     exit 0;
 }
 
@@ -257,7 +264,7 @@ while (my $conn = $server->accept())
 #---------------------------------------------------------------------------
 sub Usage
 {
-    print "Usage:\n\n    $name [start|stop|status]\n\n";
+    print "Usage:\n\n    $name [start|stop|status] [FILE.conf]\n\n";
 }
 
 
@@ -299,6 +306,10 @@ sub Log
 #
 # Section names and variable names are stored in lower case.
 #
+# TODO: Use global variables $cfgfilename and %cfg instead of an argument
+#       and return value so this function may be called by signal SIGUSR1
+#       which can then be signaled from the "lansmtpd reload" command.
+#
 # Parameter:
 #     filename
 # Returns:
@@ -331,6 +342,11 @@ sub ReadConfigFile
         $line =~ m/^\s*([a-zA-Z0-9_-]+)\s*=\s*(.*)$/;
         $2 =~ s/\s+$//;
         $config{$section}{lc($1)} = $2;
+        if (lc($1) eq "verbose")
+        {
+            $config{$section}{verbose} = 
+                ($2 eq "0" || lc($2) eq "false" || lc($2) eq "no") ? 0 : 1;
+        }
     }
     close $fh;
     return %config;
@@ -434,6 +450,7 @@ sub Daemonize
     $SIG{'KILL'} = \&Terminate;         # Probably won't work for KILL
     $SIG{'SEGV'} = \&Terminate;
     $SIG{'TERM'} = \&Terminate;
+ ## $SIG{'USR1'} = \&ReadConfigFile;    # Reload configuration from the file
     $SIG{'CHLD'} = 'IGNORE';            # This prevents zombie processes
 
     # Switch group and user from root and chown pidfile and logfile
@@ -498,10 +515,12 @@ sub Terminate
 # Parameters:
 #     local recipient username
 #     message to deliver
+#     IP address that sent it
 # Returns:
 #     nothing
 # Global:
 #     $mda      - Mail Delivery Agent (maildrop or procmail)
+#     %cfg      - Configuration data
 #
 sub Deliver
 {
@@ -515,10 +534,15 @@ sub Deliver
     }
     elsif (open MAIL, "| $mda -d $user")    # Fork
     {
-        print MAIL $message  and
-            Log("delivered a " . length($message) .
-                "-byte message from $peerip to $user")  or
+        if (! print MAIL $message)
+        {
             Log("FAILED to deliver a message from $peerip to $user: $!");
+        }
+        elsif ($cfg{local}{verbose})
+        {
+            my $len = length($message);
+            Log("Delivered a ${len}-byte message from $peerip to $user");
+        }
 
         # Closing the file causes parent to wait for the child process
         close(MAIL);
@@ -540,7 +564,7 @@ sub Deliver
 # Returns:
 #     nothing
 # Global:
-#     %cfg{smtp}
+#     %cfg      - Configuration data
 #
 sub Mail
 {
@@ -549,7 +573,7 @@ sub Mail
     my $message = shift;
     my $domain = lc($from);
     $domain =~ s/.*@//;
-    my ($smtp, $server, $port, $user, $password);
+    my ($smtp, $server, $port, $user, $password, $logverbose);
 
     if ($cfg{$domain})                  # Section [example.com] in config file
     {
@@ -557,6 +581,7 @@ sub Mail
         $port = $cfg{$domain}{port}  ||  465;
         $user = $cfg{$domain}{username};
         $password = $cfg{$domain}{password};
+        $logverbose = $cfg{$domain}{verbose};
     }
     if (! $server)                      # Default to [smtp] section
     {
@@ -564,6 +589,7 @@ sub Mail
         $port = $cfg{smtp}{port}  ||  465;
         $user = $cfg{smtp}{username};
         $password = $cfg{smtp}{password};
+        $logverbose = $cfg{smtp}{verbose};
     }
 
     if (! $server)
@@ -603,9 +629,17 @@ sub Mail
             $smtp->recipient($to);
             $first = $to  if !$first;
         }
-        my $m = "from $from to $first";
-        $smtp->data($message);
-        $smtp->dataend()  and  Log("Sent $m")  or Log("Failed to send $m: $!");
+        my $success = $smtp->data($message);
+        $smtp->dataend();
         $smtp->quit();
+
+        if (! $success)
+        {
+            Log("Failed to send from $from to $first: $!");
+        }
+        elsif ($logverbose)
+        {
+            Log("Sent from $from to $first")
+        }
     }
 }
