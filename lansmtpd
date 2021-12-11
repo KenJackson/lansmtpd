@@ -13,7 +13,7 @@ use Sys::Hostname;
 
 # Variables
 
-my $version  = "0.7";
+my $version  = "0.8";
 my $debug    = 0;
 my $verbose  = 0;
 my $failures = 0;
@@ -195,7 +195,7 @@ while (my $conn = $server->accept())
 
     # Handle the client's connection and spawn a new parser
 
-    my $client = new Net::SMTP::Server::Client($conn);
+    my $client = new Net::SMTP::Server::Client($conn, "lansmtpd ${version}");
     if (!$client)
     {
         Log("Unable to handle client connection: $!");
@@ -212,7 +212,7 @@ while (my $conn = $server->accept())
 
     if (!$client->process())
     {
-        Log("Rejecting incomplete email message from $peerhostip: $!", "exit");
+        Log("Error receiving email message from $peerhostip: $!, $?", "exit");
     }
     $SIG{'PIPE'} = sub { Log("Pipe broke mailing from " . $client->{FROM} .
                              " to " . ${$client->{TO}}[0], "exit"); };

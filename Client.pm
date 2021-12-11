@@ -1,7 +1,8 @@
-# This is a cleaned up version of this module in metacpan.org:
+# This is a modified version of this module in metacpan.org:
 # https://fastapi.metacpan.org/source/MACGYVER/SMTP-Server-1.1/Server/Client.pm
 #
-# Install it in: /usr/local/share/perl5/Net/SMTP/Server/
+# Install it in: /usr/share/perl5/Net/SMTP/Server/
+#            or: /usr/local/share/perl5/Net/SMTP/Server/
 #
 package Net::SMTP::Server::Client;
 require 5.001;
@@ -17,7 +18,7 @@ use IO::Socket;
 @ISA = qw(Exporter AutoLoader);
 @EXPORT = qw();
 
-$VERSION = '1.1a';
+$VERSION = '1.1.1';                     # Original author's v1.1
 
 my %_cmds = (
 	    DATA => \&_data,
@@ -49,7 +50,7 @@ sub _reset {
 
 # New instance.
 sub new {
-    my($this, $sock) = @_;
+    my($this, $sock, $hello) = @_;
     
     my $class = ref($this) || $this;
     my $self = {};
@@ -61,7 +62,8 @@ sub new {
     bless($self, $class);
     
     croak("No client connection specified.") unless defined($self->{SOCK});
-    $self->_put("220 Local SMTP v${VERSION} ready");
+    $hello = "lansmtpd" unless defined($hello);
+    $self->_put("220 ${hello} ready");
     return $self;
 }
 
@@ -260,10 +262,11 @@ handling required for a Net::SMTP::Server::Client connection.  The
 above example demonstrates how to use Net::SMTP::Server::Client with
 Net::SMTP::Server to handle SMTP connections.
 
-$client = new Net::SMTP::Server::Client($conn)
+$client = new Net::SMTP::Server::Client($conn, "lansmtpd")
 
 Net::SMTP::Server::Client accepts one argument that must be a handle
-to a connection that will be used for communication.
+to a connection that will be used for communication, and an optional
+argument that is the name of the server returned in the handshake.
 
 Once you have a new client session, simply call:
 

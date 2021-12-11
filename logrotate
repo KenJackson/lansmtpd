@@ -1,6 +1,6 @@
 /var/log/lansmtpd.log {
     missingok
     rotate 4
-    weekly
+    monthly
     compress
 }

@@ -13,9 +13,10 @@
 .Sh DESCRIPTION
 .Cm lansmtpd
 is an SMTP daemon that delivers email to local users
-and passes outgoing email to a real SMTP server.  It can
+and submits outgoing email to a real SMTP server.  It can
 be run on a home Linux server to serve all computers on the LAN 
-as a mail transfer agent (MTA).
+as a mail submission agent (MSA) for submission to a 
+mail transfer agent (MTA).
 .Ss "Central Configuration"
 Lansmtpd enables the consolidation of email configuration infomation.  Only
 this daemon needs to know the email provider(s) and credentials.
@@ -42,15 +43,15 @@ This allows cron or other software running on any PC on the home network
 to send email such that it is received along with other incoming mail,
 but without ever leaving the LAN or even requiring internet connectivity.
 .Pp
-Although, note that the cron daemon requires /usr/sbin/sendmail to deliver
-email.  Therefore every computer that uses cron must have the 'sendmail'
-package or a simpler substitute such as 'ssmtp' (recommended) installed
-and configured to send email to the lansmtpd server.
+Although, note that the cron daemon requires an executable /usr/sbin/sendmail
+to deliver email.  Therefore every computer that uses cron must have that
+executable, either from the 'sendmail' package or a simpler substitute
+(recommended) such as 'ssmtp' or 'msmtp' installed and configured to
+send email to the lansmtpd server.
 .Pp
 
 Multiple users on PCs directly connected to the LAN may also send email
-to each other this way if the recipients have accounts on the lansmtpd
-server.
+to each other if the recipients have accounts on the lansmtpd server.
 
 .Ss Installation
 Verify these perl packages and software packages are installed.  Install
@@ -90,18 +91,21 @@ install -m755 lansmtpd /usr/local/bin
 .It
 install -m600 lansmtpd.conf /usr/local/etc
 .It
-echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
+echo 'PERL5LIB=/usr/local/share/perl5 \\
+          /usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
 .El
 .Pp
 Edit and uncomment lines in
 .Pa /usr/local/etc/lansmtpd.conf
 appropriately.
 
-Configure ssmtp (or sendmail, etc.) on each participating machine on the
-network to deliver email to the machine running lansmtpd.  You may only
-need to set the
+Optionally configure ssmtp (or sendmail, etc.) on other machines to deliver
+email to the lansmtpd server.  You may only need to set the
 .Va mailhub
-variable to the hostname of the server.
+or
+.Va host
+variable, in that package's configuration file, to the hostname of the
+lansmtpd server.  This is typically only needed on machines running cron.
 
 .Ss Startup
 The line added to

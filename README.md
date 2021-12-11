@@ -33,11 +33,11 @@ but without ever leaving the LAN or even requiring internet connectivity.
 
 Although note that the cron daemon requires /usr/sbin/sendmail to deliver
 email.  Therefore every computer that uses cron must have the 'sendmail'
-package or a simpler substitute such as 'ssmtp' (recommended) installed
-and configured to deliver email to the lansmtpd server.
+package or a simpler substitute (recommended) such as 'ssmtp' or 'msmtp'
+installed and configured to deliver email to the lansmtpd server.
 
 Multiple users on PCs directly connected to the LAN may also send email to
-each other this way if the recipients have accounts on the lansmtpd server.
+each other if the recipients have accounts on the lansmtpd server.
 
 Installation
 ------------
@@ -79,9 +79,9 @@ by the domain name in brackets, e.g. [comcast.net].  The "from" address on
 outgoing email selects the section that's used.  Section [smtp] matches any
 "from" address that wasn't matched by another section.
 
-Configure ssmtp (or sendmail, etc.) on each participating machine on the
-network to deliver email to the machine running lansmtpd.  You may only
-need to set the 'mailhub' variable to the hostname of the server.
+Optionally configure ssmtp (or sendmail, etc.) on each participating machine
+on the network to deliver email to the lansmtpd server.  You may only need
+to set the 'mailhub' or 'host' variable to the hostname of the server.
 
 Startup
 -------
