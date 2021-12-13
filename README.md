@@ -9,8 +9,8 @@ mail transfer agent (MTA).
 Central Configuration
 ---------------------
 
-Lansmtpd enables the consolidation of email configuration infomation.  Only
-this daemon needs to know the email providers and credentials.
+Lansmtpd enables the consolidation of email configuration information.
+Only this daemon needs to know the email providers and credentials.
 
 Mail user agents (MUAs) such as 'thunderbird', 'evolution', 'mailx' or
 'mutt' on machines connected to the LAN may be configured to send all mail
@@ -61,7 +61,8 @@ Install lansmtpd by executing these commands as root:
 
     install -m755 lansmtpd /usr/local/bin
     install -m600 lansmtpd.conf /usr/local/etc
-    echo '/usr/local/bin/lansmtpd start' >> /etc/rc.d/rc.local
+    echo 'PERL5LIB=/usr/local/share/perl5 /usr/local/bin/lansmtpd start' \
+        >> /etc/rc.d/rc.local
 
 Install the man pages by executing these commands as root:
 
@@ -91,6 +92,11 @@ is booted.  It may be started manually by executing this command as root:
 
     /usr/local/bin/lansmtpd start
 
+However, perl doesn't seem to have the directory /usr/local/share/perl5 in
+it's @INC list of directories any more, so you may need to add it by
+putting 'PERL5LIB=/usr/local/share/perl5' on the command line in front of
+the command.
+
 Receiving Email
 ---------------
 
@@ -99,8 +105,8 @@ value without a complementary POP or IMAP configuration.  A suggested
 setup is to run an IMAP daemon on the same server that runs lansmtpd, and
 use fetchmail to pull email received by email providers.
 
-The [uw-imap](http://www.washington.edu/imap/) and
-[fetchmail](http://www.fetchmail.info/) packages are available in many
+The [uw-imap](https://github.com/uw-imap/imap/) and
+[fetchmail](https://www.fetchmail.info/) packages are available in many
 Linux repositories.
 
 There are advantages of this setup.
